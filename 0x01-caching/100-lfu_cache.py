@@ -1,7 +1,5 @@
 #!/usr/bin/python3
 '''LFUCache that inherits from BaseCaching'''
-
-
 from threading import RLock
 BaseCaching = __import__('base_caching').BaseCaching
 
