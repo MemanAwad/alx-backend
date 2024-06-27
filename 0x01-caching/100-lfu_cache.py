@@ -1,42 +1,64 @@
-#!/usr/bin/python3
-'''LFUCache that inherits from BaseCaching'''
-from threading import RLock
-BaseCaching = __import__('base_caching').BaseCaching
+#!/usr/bin/env python3
+'''LIFOCache that inherits from BaseCaching'''
+from collections import OrderedDict
+
+from base_caching import BaseCaching
 
 
 class LFUCache(BaseCaching):
-    '''implement LFUCache'''
+    '''implement LIFOCache'''
     def __init__(self):
         '''constructor'''
         super().__init__()
-        self.__stats = {}
-        self.__rlock = RLock()
-        
+        self.cache_data = OrderedDict()
+        self.keys_freq = []
+
+    def __reorder_items(self, mru_key):
+        ''' recotder'''
+        max_positions = []
+        mru_freq = 0
+        mru_pos = 0
+        ins_pos = 0
+        for i, key_freq in enumerate(self.keys_freq):
+            if key_freq[0] == mru_key:
+                mru_freq = key_freq[1] + 1
+                mru_pos = i
+                break
+            elif len(max_positions) == 0:
+                max_positions.append(i)
+            elif key_freq[1] < self.keys_freq[max_positions[-1]][1]:
+                max_positions.append(i)
+        max_positions.reverse()
+        for pos in max_positions:
+            if self.keys_freq[pos][1] > mru_freq:
+                break
+            ins_pos = pos
+        self.keys_freq.pop(mru_pos)
+        self.keys_freq.insert(ins_pos, [mru_key, mru_freq])
+
     def put(self, key, item):
-        '''put in the cache'''
-        if key is not None and item is not None:
-            keyOut = self._balance(key)
-            with self.__rlock:
-                self.cache_data.update({key: item})
-            if keyOut is not None:
-                print('DISCARD: {}'.format(keyOut))
+        '''add to the cache'''
+        if key is None or item is None:
+            return
+        if key not in self.cache_data:
+            if len(self.cache_data) + 1 > BaseCaching.MAX_ITEMS:
+                lfu_key, _ = self.keys_freq[-1]
+                self.cache_data.pop(lfu_key)
+                self.keys_freq.pop()
+                print("DISCARD:", lfu_key)
+            self.cache_data[key] = item
+            ins_index = len(self.keys_freq)
+            for i, key_freq in enumerate(self.keys_freq):
+                if key_freq[1] == 0:
+                    ins_index = i
+                    break
+            self.keys_freq.insert(ins_index, [key, 0])
+        else:
+            self.cache_data[key] = item
+            self.__reorder_items(key)
 
     def get(self, key):
-        '''get  from cache'''
-        with self.__rlock:
-            value = self.cache_data.get(key, None)
-            if key in self.__stats:
-                self.__stats[key] += 1
-        return value
-
-    def _balance(self, keyIn):
-        '''balance'''
-        keyOut = None
-        with self.__rlock:
-            if keyIn not in self.__stats:
-                if len(self.cache_data) == BaseCaching.MAX_ITEMS:
-                    keyOut = min(self.__stats, key=self.__stats.get)
-                    self.cache_data.pop(keyOut)
-                    self.__stats.pop(keyOut)
-            self.__stats[keyIn] = self.__stats.get(keyIn, 0) + 1
-        return keyOut
+        '''get from the cache'''
+        if key is not None and key in self.cache_data:
+            self.__reorder_items(key)
+        return self.cache_data.get(key, None)
